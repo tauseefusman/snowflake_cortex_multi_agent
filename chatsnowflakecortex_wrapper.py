@@ -292,13 +292,48 @@ class ChatSnowflakeCortex(BaseChatModel):
                 if self.debug:
                     print(f"DEBUG: Processing event: {json.dumps(event, indent=2)}")
                 
-                # Handle different event types - check both 'event' and 'object' fields
-                event_type = event.get('event', event.get('object', ''))
-                
-                if event_type == "message.delta":
-                    delta = event.get('delta', {})
+                # Handle message.delta events following the reference code structure
+                if event.get('event') == "message.delta":
+                    data = event.get('data', {})
+                    delta = data.get('delta', {})
                     
                     # Process content in delta
+                    for content_item in delta.get('content', []):
+                        content_type = content_item.get('type')
+                        
+                        if content_type == "tool_results":
+                            tool_results = content_item.get('tool_results', {})
+                            if 'content' in tool_results:
+                                for result in tool_results['content']:
+                                    if result.get('type') == 'json':
+                                        json_data = result.get('json', {})
+                                        # Extract text
+                                        new_text = json_data.get('text', '')
+                                        if new_text:
+                                            text += new_text
+                                        
+                                        # Extract SQL
+                                        new_sql = json_data.get('sql', '')
+                                        if new_sql:
+                                            sql = new_sql
+                                        
+                                        # Extract search results for citations
+                                        search_results = json_data.get('searchResults', [])
+                                        for search_result in search_results:
+                                            citations.append({
+                                                'source_id': search_result.get('source_id', ''),
+                                                'doc_title': search_result.get('doc_title', ''),
+                                                'doc_chunk': search_result.get('doc_id', '')
+                                            })
+                        
+                        elif content_type == 'text':
+                            text += content_item.get('text', '')
+                
+                # Also handle the original event structure for backwards compatibility
+                elif event.get('event') == "message.content" or 'delta' in event:
+                    # Handle original delta structure
+                    delta = event.get('delta', {})
+                    
                     for content_item in delta.get('content', []):
                         content_type = content_item.get('type')
                         
@@ -314,21 +349,22 @@ class ChatSnowflakeCortex(BaseChatModel):
                                         if new_text:
                                             text += new_text
                                         if new_sql:
-                                            sql = new_sql  # Replace with new SQL
+                                            sql = new_sql
                                         
                                         # Extract search results for citations
                                         search_results = json_content.get('searchResults', [])
                                         for search_result in search_results:
                                             citations.append({
-                                                'source_id': search_result.get('source_id', ''), 
-                                                'doc_id': search_result.get('doc_id', '')
+                                                'source_id': search_result.get('source_id', ''),
+                                                'doc_title': search_result.get('doc_title', ''),
+                                                'doc_chunk': search_result.get('doc_id', '')
                                             })
                         
                         elif content_type == 'text':
                             text += content_item.get('text', '')
                 
-                elif event_type == "message.content":
-                    # Handle complete message content
+                # Handle complete message content
+                elif event.get('event') == "message.content":
                     content_items = event.get('content', [])
                     
                     for content_item in content_items:
@@ -359,7 +395,7 @@ class ChatSnowflakeCortex(BaseChatModel):
         return text, sql, citations
     
     def _format_agent_response(self, text: str, sql: str, citations: list) -> str:
-        """Format the agent response"""
+        """Format the agent response for terminal output"""
         response_parts = []
         
         if text:
@@ -374,10 +410,99 @@ class ChatSnowflakeCortex(BaseChatModel):
             citation_text = "\n**Citations:**"
             for i, citation in enumerate(citations, 1):
                 source_id = citation.get('source_id', f'Citation {i}')
-                citation_text += f"\n[{source_id}]"
+                doc_title = citation.get('doc_title', 'Unknown Document')
+                doc_chunk = citation.get('doc_chunk', 'N/A')
+                
+                citation_text += f"\n[{source_id}] - Document: {doc_title}"
+                if doc_chunk and doc_chunk != 'N/A':
+                    citation_text += f" (Chunk: {doc_chunk})"
+                    
             response_parts.append(citation_text)
         
         return "\n".join(response_parts) if response_parts else "No analysis results available."
+
+    def snowflake_agent_call_structured(self, query: str, limit: int = 10) -> dict:
+        """Call Snowflake Cortex Agent API and return structured data (text, SQL, citations)"""
+        payload = {
+            "model": AGENT_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": query
+                        }
+                    ]
+                }
+            ],
+            "tools": [
+                {
+                    "tool_spec": {
+                        "type": "cortex_analyst_text_to_sql",
+                        "name": "analyst1"
+                    }
+                },
+                {
+                    "tool_spec": {
+                        "type": "cortex_search",
+                        "name": "search1"
+                    }
+                }
+            ],
+            "tool_resources": {
+                "analyst1": {"semantic_model_file": SEMANTIC_MODELS},
+                "search1": {
+                    "name": CORTEX_SEARCH_SERVICES,
+                    "max_results": limit,
+                    "id_column": "conversation_id"
+                }
+            }
+        }
+        
+        try:
+            # Get the Agent API URL
+            if not self.snowflake_account:
+                raise ValueError("Snowflake account is required to construct Agent API URL")
+            
+            account_url = f"https://{self.snowflake_account}.snowflakecomputing.com"
+            agent_api_url = f"{account_url}{AGENT_API_ENDPOINT}"
+            
+            if self.debug:
+                print(f"DEBUG: Agent API URL: {agent_api_url}")
+                print(f"DEBUG: Agent Payload: {json.dumps(payload, indent=2)}")
+            
+            # Make HTTP request to Snowflake Cortex Agent API
+            response = requests.post(
+                agent_api_url,
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=API_TIMEOUT / 1000,  # Convert milliseconds to seconds
+                stream=True  # Enable streaming for agent responses
+            )
+            
+            if self.debug:
+                print(f"DEBUG: Agent Response Status Code: {response.status_code}")
+                print(f"DEBUG: Agent Response Headers: {dict(response.headers)}")
+            
+            response.raise_for_status()
+            
+            # Process the streaming response
+            response_content = self._parse_agent_streaming_response(response)
+            
+            # Process the response
+            text, sql, citations = self._process_agent_response(response_content)
+            
+            # Return structured data
+            return {
+                "text": text,
+                "sql": sql,
+                "citations": citations,
+                "formatted_response": self._format_agent_response(text, sql, citations)
+            }
+            
+        except Exception as e:
+            raise ChatSnowflakeCortexError(f"Error making Cortex Agent request: {str(e)}")
 
     def _get_api_url(self) -> str:
         """Get the full API URL for Snowflake Cortex."""

@@ -15,7 +15,7 @@ load_dotenv()
 # Agent names
 ROUTER_AGENT = "router"
 ANALYST_AGENT = "analyst"
-SQL_OPERATOR_AGENT = "sql_operator"
+SQLOPERATOR_AGENT = "sqloperator"
 GENERAL_AGENT = "general"
 
 class WorkflowState(MessagesState):
@@ -154,7 +154,7 @@ Focus on delivering high-quality analytical insights and data retrieval queries 
     
     return state
 
-def sql_operator_agent(state: WorkflowState):
+def sqloperator_agent(state: WorkflowState):
     """
     Specialized SQL operator agent focused on database creation and data insertion
     Following the exact prompt from PROMPT.MD
@@ -243,11 +243,11 @@ SECURITY NOTICE: You are designed to only perform safe, non-destructive database
     ]
     
     response = llm.invoke(messages)
-    response.name = "SQL_Operator"
+    response.name = "SQLOperator"
     
     # Store final response and add to messages
     state["final_response"] = response.content
-    state["agent_type"] = SQL_OPERATOR_AGENT
+    state["agent_type"] = SQLOPERATOR_AGENT
     state["messages"].append(response)
     
     return state
@@ -277,7 +277,7 @@ def general_agent(state: WorkflowState):
     
     return state
 
-def route_request(state: WorkflowState) -> Literal["analyst", "sql_operator", "general"]:
+def route_request(state: WorkflowState) -> Literal["analyst", "sqloperator", "general"]:
     """
     Route requests based on general agent response
     Following the routing logic from PROMPT.MD
@@ -290,8 +290,8 @@ def route_request(state: WorkflowState) -> Literal["analyst", "sql_operator", "g
         print("Routing to analyst agent")
         return "analyst"
     elif response == "SQLOPERATOR":
-        print("Routing to sql_operator agent")
-        return "sql_operator"
+        print("Routing to sqloperator agent")
+        return "sqloperator"
     else:
         print("Routing to general agent")
         return "general"
@@ -306,7 +306,7 @@ def create_workflow():
     # Add all agent nodes
     builder.add_node("router", router_agent)
     builder.add_node("analyst", analyst_agent)
-    builder.add_node("sql_operator", sql_operator_agent)
+    builder.add_node("sqloperator", sqloperator_agent)
     builder.add_node("general", general_agent)
     
     # Set entry point
@@ -318,14 +318,14 @@ def create_workflow():
         route_request,
         {
             "analyst": "analyst",
-            "sql_operator": "sql_operator", 
+            "sqloperator": "sqloperator", 
             "general": "general"
         }
     )
     
     # All specialized agents end the conversation
     builder.add_edge("analyst", END)
-    builder.add_edge("sql_operator", END)
+    builder.add_edge("sqloperator", END)
     builder.add_edge("general", END)
     
     # Add memory for conversation state
@@ -386,7 +386,7 @@ def interactive_demo():
     print("This workflow includes:")
     print("- Router Agent: Classifies your request")
     print("- Analyst Agent: Handles data analysis requests")
-    print("- SQL Operator Agent: Creates tables and inserts data")
+    print("- SQLOperator Agent: Creates tables and inserts data")
     print("- General Agent: Handles other requests")
     print("=" * 50)
     print("Type 'quit' to exit")
