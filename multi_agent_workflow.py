@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import MessagesState
-from chatsnowflakecortex_wrapper import ChatSnowflakeCortex
+from chatsnowflakecortex_wrapper import ChatSnowflakeCortex, DEFAULT_MODEL
 from dotenv import load_dotenv
 import os
 
@@ -15,7 +15,7 @@ load_dotenv()
 # Agent names
 ROUTER_AGENT = "router"
 ANALYST_AGENT = "analyst"
-SQL_GENERATOR_AGENT = "sql_generator"
+SQL_OPERATOR_AGENT = "sql_operator"
 GENERAL_AGENT = "general"
 
 class WorkflowState(MessagesState):
@@ -27,7 +27,7 @@ class WorkflowState(MessagesState):
 
 # Initialize the Snowflake Cortex chat model
 llm = ChatSnowflakeCortex(
-    model="llama3.1-70b",
+    model=os.getenv("DEFAULT_MODEL", DEFAULT_MODEL),
     temperature=0.1,
     max_tokens=1000,
 )
@@ -41,14 +41,14 @@ def router_agent(state: WorkflowState):
 
 Classification Rules:
 - If the user is asking for data analysis, insights, trends, patterns, querying data, finding information from database, or interpretation of data: respond with exactly "ANALYSIS"
-- If the user is asking to CREATE tables, INSERT data, or generate database schema creation statements: respond with exactly "SQLGENERATOR"
+- If the user is asking to CREATE tables, INSERT data, or generate database schema creation statements: respond with exactly "SQLOPERATOR"
 - For any other general questions, conversations, or requests: handle them normally as a general assistant
 
 IMPORTANT: 
 - Report GENERATION and RUNNING = ANALYSIS
-- Report SAVING and SCHEDULING = SQLGENERATOR
+- Report SAVING and SCHEDULING = SQLOPERATOR
 
-IMPORTANT: When routing to specialized agents, respond with ONLY the single word (ANALYSIS or SQLGENERATOR) - no explanations, no additional text, no formatting.
+IMPORTANT: When routing to specialized agents, respond with ONLY the single word (ANALYSIS or SQLOPERATOR) - no explanations, no additional text, no formatting.
 
 Examples:
 - "Can you analyze the sales trends for last quarter?" → ANALYSIS
@@ -56,9 +56,9 @@ Examples:
 - "Find all customers who purchased in the last 30 days" → ANALYSIS
 - "Create a query to get top performing products" → ANALYSIS
 - "Generate a query to find duplicate records" → ANALYSIS
-- "Create a table for storing user information" → SQLGENERATOR
-- "Insert sample data into the products table" → SQLGENERATOR
-- "Generate CREATE statement for orders table" → SQLGENERATOR
+- "Create a table for storing user information" → SQLOPERATOR
+- "Insert sample data into the products table" → SQLOPERATOR
+- "Generate CREATE statement for orders table" → SQLOPERATOR
 - "What's the weather like today?" → [Handle as general assistant]"""
 
     # Get the latest user message
@@ -154,9 +154,9 @@ Focus on delivering high-quality analytical insights and data retrieval queries 
     
     return state
 
-def sql_generator_agent(state: WorkflowState):
+def sql_operator_agent(state: WorkflowState):
     """
-    Specialized SQL generator agent focused on database creation and data insertion
+    Specialized SQL operator agent focused on database creation and data insertion
     Following the exact prompt from PROMPT.MD
     """
     system_prompt = """You are a specialized SQL generator agent focused ONLY on database creation and data insertion operations. Your role is to create database schemas and insert data safely.
@@ -243,11 +243,11 @@ SECURITY NOTICE: You are designed to only perform safe, non-destructive database
     ]
     
     response = llm.invoke(messages)
-    response.name = "SQL_Generator"
+    response.name = "SQL_Operator"
     
     # Store final response and add to messages
     state["final_response"] = response.content
-    state["agent_type"] = SQL_GENERATOR_AGENT
+    state["agent_type"] = SQL_OPERATOR_AGENT
     state["messages"].append(response)
     
     return state
@@ -277,7 +277,7 @@ def general_agent(state: WorkflowState):
     
     return state
 
-def route_request(state: WorkflowState) -> Literal["analyst", "sql_generator", "general"]:
+def route_request(state: WorkflowState) -> Literal["analyst", "sql_operator", "general"]:
     """
     Route requests based on general agent response
     Following the routing logic from PROMPT.MD
@@ -289,9 +289,9 @@ def route_request(state: WorkflowState) -> Literal["analyst", "sql_generator", "
     if response == "ANALYSIS":
         print("Routing to analyst agent")
         return "analyst"
-    elif response == "SQLGENERATOR":
-        print("Routing to sql_generator agent")
-        return "sql_generator"
+    elif response == "SQLOPERATOR":
+        print("Routing to sql_operator agent")
+        return "sql_operator"
     else:
         print("Routing to general agent")
         return "general"
@@ -306,7 +306,7 @@ def create_workflow():
     # Add all agent nodes
     builder.add_node("router", router_agent)
     builder.add_node("analyst", analyst_agent)
-    builder.add_node("sql_generator", sql_generator_agent)
+    builder.add_node("sql_operator", sql_operator_agent)
     builder.add_node("general", general_agent)
     
     # Set entry point
@@ -318,14 +318,14 @@ def create_workflow():
         route_request,
         {
             "analyst": "analyst",
-            "sql_generator": "sql_generator", 
+            "sql_operator": "sql_operator", 
             "general": "general"
         }
     )
     
     # All specialized agents end the conversation
     builder.add_edge("analyst", END)
-    builder.add_edge("sql_generator", END)
+    builder.add_edge("sql_operator", END)
     builder.add_edge("general", END)
     
     # Add memory for conversation state
@@ -386,7 +386,7 @@ def interactive_demo():
     print("This workflow includes:")
     print("- Router Agent: Classifies your request")
     print("- Analyst Agent: Handles data analysis requests")
-    print("- SQL Generator Agent: Creates tables and inserts data")
+    print("- SQL Operator Agent: Creates tables and inserts data")
     print("- General Agent: Handles other requests")
     print("=" * 50)
     print("Type 'quit' to exit")

@@ -50,6 +50,10 @@ API_ENDPOINT = os.getenv("API_ENDPOINT", "/api/v2/cortex/inference:complete")
 AGENT_API_ENDPOINT = os.getenv("AGENT_API_ENDPOINT", "/api/v2/cortex/agent:run")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "50000"))  # in milliseconds
 
+# Model Configuration - loaded from environment variables
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama3.1-70b")
+AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-3-5-sonnet")
+
 # Cortex Agent Constants - loaded from environment variables
 CORTEX_SEARCH_SERVICES = os.getenv("CORTEX_SEARCH_SERVICES", "sales_intelligence.data.sales_conversation_search")
 SEMANTIC_MODELS = os.getenv("SEMANTIC_MODELS", "@sales_intelligence.data.models/sales_metrics_model.yaml")
@@ -130,8 +134,8 @@ class ChatSnowflakeCortex(BaseChatModel):
     session: Any = None
     """Snowflake connector session object used to obtain authentication token."""
 
-    model: str = "mistral-large"
-    """Snowflake cortex hosted LLM model name, defaulted to `mistral-large`.
+    model: str = Field(default_factory=lambda: DEFAULT_MODEL)
+    """Snowflake cortex hosted LLM model name, defaulted from environment variable.
         Refer to docs for more options. Also note, not all models support 
         agentic workflows."""
 
@@ -196,7 +200,7 @@ class ChatSnowflakeCortex(BaseChatModel):
     def snowflake_agent_call(self, query: str, limit: int = 10) -> str:
         """Call Snowflake Cortex Agent API for advanced analysis"""
         payload = {
-            "model": "claude-3-5-sonnet",
+            "model": AGENT_MODEL,
             "messages": [
                 {
                     "role": "user",
