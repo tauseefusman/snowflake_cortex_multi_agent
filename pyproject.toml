@@ -1,0 +1,18 @@
+[project]
+name = "snowflake-cortex-multi-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph",
+    "langchain-core",
+    "langchain-community",
+    "notebook",
+    "snowflake-connector-python>=3.16.0",
+    "duckduckgo-search>=8.1.1",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+    "pydantic>=2.0.0",
+]
+
