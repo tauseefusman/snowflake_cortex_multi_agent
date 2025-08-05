@@ -1,6 +1,6 @@
 
 
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, List
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -8,6 +8,7 @@ from langgraph.graph import MessagesState
 from chatsnowflakecortex_wrapper import ChatSnowflakeCortex, DEFAULT_MODEL
 from dotenv import load_dotenv
 import os
+import re
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +25,7 @@ class WorkflowState(MessagesState):
     general_response: str
     final_response: str
     agent_type: str
+    sql_queries: List[str]
 
 # Initialize the Snowflake Cortex chat model
 llm = ChatSnowflakeCortex(
@@ -31,6 +33,25 @@ llm = ChatSnowflakeCortex(
     temperature=0.1,
     max_tokens=1000,
 )
+
+def extract_sql_queries(text: str) -> List[str]:
+    """
+    Extract SQL queries from analyst agent response.
+    Simply extracts all SQL code blocks and SQL-like statements.
+    """
+    sql_queries = []
+    
+    # Pattern to match SQL code blocks (```sql...``` or ```...```)
+    code_block_pattern = r'```(?:sql)?\s*(.*?)```'
+    code_blocks = re.findall(code_block_pattern, text, re.DOTALL | re.IGNORECASE)
+    
+    for block in code_blocks:
+        block = block.strip()
+        if block:
+            sql_queries.append(block)
+            
+    
+    return sql_queries
 
 def router_agent(state: WorkflowState):
     """
@@ -102,6 +123,14 @@ def analyst_agent(state: WorkflowState):
         # Use the Snowflake Cortex Agent endpoint for analysis
         response_content = llm.snowflake_agent_call(user_input)
         
+        # Extract SQL queries from the response
+        sql_queries = extract_sql_queries(response_content)
+        
+        # Initialize sql_queries list if not exists and add new queries
+        if "sql_queries" not in state:
+            state["sql_queries"] = []
+        state["sql_queries"].extend(sql_queries)
+        
         # Create an AI message with the formatted response
         response = AIMessage(content=response_content, name="Analyst")
         
@@ -143,6 +172,14 @@ Focus on delivering high-quality analytical insights and data retrieval queries 
         
         response = llm.invoke(messages)
         response.name = "Analyst"
+        
+        # Extract SQL queries from the fallback response
+        sql_queries = extract_sql_queries(response.content)
+        
+        # Initialize sql_queries list if not exists and add new queries
+        if "sql_queries" not in state:
+            state["sql_queries"] = []
+        state["sql_queries"].extend(sql_queries)
         
         # Store final response and add to messages
         state["final_response"] = f"**Fallback Response (Cortex Agent unavailable):**\n{response.content}"
@@ -206,7 +243,7 @@ $$;
 -- 3. Create scheduled task
 CREATE OR REPLACE TASK schema.report_task
   WAREHOUSE = your_warehouse
-  SCHEDULE = 'USING CRON 0 0 * * * UTC' -- Daily at midnight
+  SCHEDULE = 'USING CRON 0 0 * * * Asia/Singapore' -- Daily at midnight
 AS
   CALL schema.report_procedure();
 
@@ -357,7 +394,8 @@ def run_workflow(user_input: str, thread_id: str = "default"):
         user_input=user_input,
         general_response="",
         final_response="",
-        agent_type=""
+        agent_type="",
+        sql_queries=[]
     )
     
     # Configuration for the thread
@@ -371,6 +409,10 @@ def run_workflow(user_input: str, thread_id: str = "default"):
         print(f"User Input: {user_input}")
         print(f"Routed to: {result['agent_type']}")
         print(f"Final Response: {result['final_response']}")
+        if result.get('sql_queries'):
+            print(f"SQL Queries Extracted: {len(result['sql_queries'])}")
+            for i, query in enumerate(result['sql_queries'], 1):
+                print(f"  Query {i}: {query[:100]}...")
         print("=" * 40)
         
         return result
@@ -410,6 +452,12 @@ def interactive_demo():
         
         if result:
             print(f"🤖 {result['agent_type'].title()}: {result['final_response']}")
+            print("SQL Queries List (If any):")
+            if result.get('sql_queries'):
+                for i, query in enumerate(result['sql_queries'], 1):
+                    print(f"  Query {i}: {query[:100]}...")
+        else:
+            print("No valid response from agents.")
         
         print()
 
