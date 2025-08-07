@@ -29,11 +29,6 @@ SEMANTIC_MODELS = {
         "description": "Sales performance, revenue, and customer metrics",
         "tables": ["sales_metrics"]
     },
-    "Financial Analytics": {
-        "path": "@SALES_INTELLIGENCE.DATA.MODELS/financial_model.yaml", 
-        "description": "Financial reporting and business intelligence",
-        "tables": ["financial_data", "budgets", "expenses", "profit_loss"]
-    },
 }
 
 # Default semantic model from environment or fallback
@@ -69,15 +64,6 @@ UI_CONFIG = {
     "max_chart_rows": 20
 }
 
-# Sample Questions
-SAMPLE_QUERIES = [
-    "What were the total sales last quarter?",
-    "Show me top performing products by revenue",
-    "Which customers have the highest order value?",
-    "What is the monthly sales trend this year?",
-    "Compare sales performance across regions"
-]
-
 def get_semantic_models() -> Dict[str, Dict]:
     """Get available semantic models"""
     return SEMANTIC_MODELS
@@ -96,10 +82,6 @@ def get_agent_config() -> Dict:
 def get_ui_config() -> Dict:
     """Get UI configuration"""
     return UI_CONFIG
-
-def get_sample_queries() -> List[str]:
-    """Get sample queries for users to try"""
-    return SAMPLE_QUERIES
 
 # Configure Streamlit page with responsive settings
 st.set_page_config(
@@ -132,58 +114,35 @@ def initialize_session_state():
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = "streamlit_session"
     
-    if "sample_question" not in st.session_state:
-        st.session_state.sample_question = ""
-    
     if "awaiting_response" not in st.session_state:
         st.session_state.awaiting_response = False
 
 def semantic_model_header():
     """Semantic model selector at the top of the page"""
-    st.header("🤖 DM Assistance")
+    st.header("DM Assistant - Data Insights & SQL Operations")
     
-    # Create columns for semantic model selector
-    col1, col2 = st.columns([2, 1])
+    semantic_models = get_semantic_models()
+    model_names = list(semantic_models.keys())
+    model_paths = [semantic_models[name]["path"] for name in model_names]
     
-    with col1:
-        # Get semantic models from config
-        semantic_models = get_semantic_models()
-        model_names = list(semantic_models.keys())
-        model_paths = [semantic_models[name]["path"] for name in model_names]
-        
-        # Model selector with descriptions
-        selected_model_index = st.selectbox(
-            "📊 Select Semantic Model:",
-            options=range(len(model_names)),
-            format_func=lambda i: f"{model_names[i]} - {semantic_models[model_names[i]]['description'][:50]}...",
-            index=0,
-            key="semantic_model_selector"
-        )
-        
-        selected_model_path = model_paths[selected_model_index]
-        st.session_state.selected_semantic_model = selected_model_path
+    # Model selector with descriptions
+    selected_model_index = st.selectbox(
+        "Choose Semantic Model:",
+        options=range(len(model_names)),
+        format_func=lambda i: f"{model_names[i]} - {semantic_models[model_names[i]]['description'][:50]}...",
+        index=0,
+        key="semantic_model_selector"
+    )
     
-    with col2:
-        # Show model details
-        selected_model_info = semantic_models[model_names[selected_model_index]]
-        with st.expander("ℹ️ Model Details"):
-            st.write(f"**Description:** {selected_model_info['description']}")
-            st.write(f"**Tables:** {', '.join(selected_model_info['tables'])}")
+    selected_model_path = model_paths[selected_model_index]
+    st.session_state.selected_semantic_model = selected_model_path
     
     st.markdown("---")
     return selected_model_path
 
 def sidebar_module():
-    """Handles sample questions"""
+    """Handles additional configuration options"""
     st.sidebar.title("🔧 Configuration")
-    
-    # Show sample questions to get started
-    with st.sidebar.expander("🚀 Sample Questions"):
-        sample_queries = get_sample_queries()
-        for i, query in enumerate(sample_queries[:5], 1):  # Show first 5
-            if st.sidebar.button(f"💬 {query[:30]}...", key=f"sample_q_{i}"):
-                # Add to chat input (this would trigger the chat in the main area)
-                st.session_state.sample_question = query
     
     return st.session_state.selected_query
 
@@ -218,20 +177,12 @@ def chat_module():
             
             st.empty()
         else:
-            st.info("👋 Welcome! Ask me anything about your data or request help to get started.")
-    
-    
-    initial_input = ""
-    if st.session_state.sample_question:
-        initial_input = st.session_state.sample_question
-        st.session_state.sample_question = ""  # Clear it
+            st.info("Welcome! Ask me anything about your data or request help to get started.")
     
     user_input = st.chat_input("Ask me anything about your data or request help...")
     
-    if initial_input or user_input:
-        input_text = initial_input or user_input
-        
-        st.session_state.messages.append({"role": "user", "content": input_text})
+    if user_input:
+        st.session_state.messages.append({"role": "user", "content": user_input})
         st.session_state.awaiting_response = True
         
         st.rerun()
@@ -316,14 +267,13 @@ def visualization_module(sql_result_df: pd.DataFrame):
         return
     
     ui_config = get_ui_config()
-    st.subheader("📊 Data Visualization")
+    st.subheader("Report Visualization")
     
     data_tab, line_tab, bar_tab = st.tabs(["📋 Data", "📈 Line Chart", "📊 Bar Chart"])
     
     with data_tab:
-        st.dataframe(sql_result_df, use_container_width=True, hide_index=True)
         
-        st.subheader("📈 Data Summary")
+        st.subheader("Report Summary")
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -333,6 +283,8 @@ def visualization_module(sql_result_df: pd.DataFrame):
         with col3:
             numeric_cols = sql_result_df.select_dtypes(include=['number']).columns
             st.metric("Numeric Columns", len(numeric_cols))
+
+        st.dataframe(sql_result_df, use_container_width=True, hide_index=True)
     
     with line_tab:
         if len(sql_result_df.columns) >= 2:
@@ -419,7 +371,7 @@ def visualization_module(sql_result_df: pd.DataFrame):
 
 def sql_queries_panel():
     """SQL Queries Panel for Column 2"""
-    st.subheader("📝 SQL Queries")
+    st.subheader("SQL Queries")
     
     if st.session_state.available_sql_queries:
         # Show dropdown with available queries
@@ -427,7 +379,7 @@ def sql_queries_panel():
         max_length = ui_config["max_query_display_length"]
         
         query_options = ["Select a query..."] + [
-            f"Query {i+1}: {query[:max_length]}..." if len(query) > max_length else f"Query {i+1}: {query}"
+            f"{i+1}: {query[:max_length]}..." if len(query) > max_length else f"{i+1}: {query}"
             for i, query in enumerate(st.session_state.available_sql_queries)
         ]
         
@@ -444,16 +396,14 @@ def sql_queries_panel():
         else:
             st.session_state.selected_query = ""
     else:
-        st.info("💡 Ask Cortex Analyst a data question to see SQL queries here!")
+        st.info("Ask Cortex Analyst a data question to see SQL queries here!")
 
 def sql_execution_panel():
     """SQL Operator Execution Panel"""
-    if st.session_state.selected_query:
-        st.subheader("⚙️ SQL Query Execution")
-        
+    if st.session_state.selected_query:        
         st.code(st.session_state.selected_query, language="sql")
         
-        if st.button("🚀 Execute Query", type="primary"):
+        if st.button("Execute Query", type="primary"):
             with st.spinner("Executing SQL query..."):
                 result_df = sql_operator_module(st.session_state.selected_query)
                 st.session_state.sql_result_df = result_df
@@ -470,7 +420,7 @@ def main():
     # Semantic model selector at the top
     selected_model = semantic_model_header()
     
-    # Sidebar module (now just sample questions)
+    # Sidebar module for additional configuration
     selected_query = sidebar_module()
     
     if st.session_state.get('mobile_view', False):
