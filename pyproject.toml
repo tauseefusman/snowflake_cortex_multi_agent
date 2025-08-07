@@ -1,7 +1,7 @@
 [project]
 name = "snowflake-cortex-multi-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-agent Snowflake Cortex Streamlit app with interactive data analysis"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,7 +9,11 @@ dependencies = [
     "langchain-core",
     "langchain-community",
     "notebook",
+    "streamlit>=1.28.0",
+    "pandas>=2.0.0",
     "snowflake-connector-python>=3.16.0",
+    "snowflake-snowpark-python>=1.0.0",
+    "sseclient-py>=1.8.0",
     "duckduckgo-search>=8.1.1",
     "python-dotenv>=1.0.0",
     "requests>=2.32.0",
