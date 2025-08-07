@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from multi_agent_workflow import run_workflow, extract_sql_queries
 from chatsnowflakecortex_wrapper import ChatSnowflakeCortex
 
-# Load environment variables
 load_dotenv()
 
 # App Configuration
@@ -22,7 +21,6 @@ APP_CONFIG = {
     "sidebar_state": "expanded"
 }
 
-# Semantic Models Configuration
 SEMANTIC_MODELS = {
     "Sales Intelligence": {
         "path": "@SALES_INTELLIGENCE.DATA.MODELS/sales_metrics_model.yaml",
@@ -31,13 +29,11 @@ SEMANTIC_MODELS = {
     },
 }
 
-# Default semantic model from environment or fallback
 DEFAULT_SEMANTIC_MODEL = os.getenv(
     "SEMANTIC_MODELS", 
     "@SALES_INTELLIGENCE.DATA.MODELS/sales_metrics_model.yaml"
 )
 
-# Database Configuration
 DATABASE_CONFIG = {
     "database": os.getenv("SNOWFLAKE_DATABASE", "SALES_INTELLIGENCE"),
     "schema": os.getenv("SNOWFLAKE_SCHEMA", "DATA"),
@@ -212,6 +208,7 @@ def chat_module():
                             
                             if result.get("sql_queries"):
                                 st.session_state.available_sql_queries = result["sql_queries"]
+                                
         
         # Clear the awaiting response flag
         st.session_state.awaiting_response = False
@@ -261,7 +258,6 @@ def sql_operator_module(selected_query: str) -> Optional[pd.DataFrame]:
         return None
 
 def visualization_module(sql_result_df: pd.DataFrame):
-    """Tabbed visualization using Streamlit tabs"""
     if sql_result_df is None or sql_result_df.empty:
         st.info("📊 No data to visualize")
         return
@@ -335,18 +331,13 @@ def visualization_module(sql_result_df: pd.DataFrame):
                 else:
                     x_col = sql_result_df.columns[0]
                 
-                # Create bar chart
                 try:
                     if x_col in numeric_cols:
                         chart_data = sql_result_df[[x_col]].head(ui_config["max_chart_rows"])
                         st.bar_chart(chart_data)
                     else:
-                        # Group by category and sum numeric values
                         if len(numeric_cols) >= 1:
-                            # Use altair for grouped data
                             y_col = numeric_cols[0]
-                            
-                            # Aggregate data if needed
                             agg_data = sql_result_df.groupby(x_col)[y_col].sum().reset_index()
                             
                             chart = alt.Chart(agg_data.head(ui_config["max_chart_rows"])).mark_bar().encode(
@@ -370,11 +361,9 @@ def visualization_module(sql_result_df: pd.DataFrame):
             st.info("Need at least 2 columns for bar chart")
 
 def sql_queries_panel():
-    """SQL Queries Panel for Column 2"""
-    st.subheader("SQL Queries")
+    st.subheader("Reports / SQL Queries")
     
     if st.session_state.available_sql_queries:
-        # Show dropdown with available queries
         ui_config = get_ui_config()
         max_length = ui_config["max_query_display_length"]
         
