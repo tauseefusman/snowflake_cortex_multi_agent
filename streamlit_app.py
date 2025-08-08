@@ -113,6 +113,9 @@ def initialize_session_state():
     if "selected_query" not in st.session_state:
         st.session_state.selected_query = ""
     
+    if "selected_query_index" not in st.session_state:
+        st.session_state.selected_query_index = 0
+    
     if "sql_result_df" not in st.session_state:
         st.session_state.sql_result_df = None
     
@@ -205,7 +208,12 @@ def chat_module():
                             
                             # Extract SQL queries from response
                             sql_queries = extract_sql_queries(response_content)
-                            st.session_state.available_sql_queries.extend(sql_queries)
+                            if sql_queries:
+                                # New queries found - reset selection
+                                st.session_state.available_sql_queries.extend(sql_queries)
+                                st.session_state.selected_query_index = 0
+                                st.session_state.selected_query = ""
+                                st.session_state.sql_result_df = None
                             
                             # Append the agent response to the chat
                             st.session_state.messages.append({
@@ -256,6 +264,11 @@ def visualization_module(sql_result_df: pd.DataFrame):
         return
     
     ui_config = get_ui_config()
+    # if df has only single column and no numeric columns, name is status then we can skip visualization
+    if len(sql_result_df.columns) == 1 and sql_result_df.columns[0] == "status":
+        st.dataframe(sql_result_df, use_container_width=True, hide_index=True)
+        return
+
     st.subheader("Report Visualization")
     
     data_tab, line_tab, bar_tab = st.tabs(["📋 Data", "📈 Line Chart", "📊 Bar Chart"])
@@ -362,37 +375,58 @@ def sql_queries_panel():
             f"{i+1}: {query[:max_length]}..." if len(query) > max_length else f"{i+1}: {query}"
             for i, query in enumerate(st.session_state.available_sql_queries)
         ]
-        # select box must always check from session state
-        if "selected_query" not in st.session_state:
-            st.session_state.selected_query = ""
-        # Select box to choose SQL query
-        st.subheader("Reports / SQL Queries")
-
+        
+        # Initialize session state for selected query index if not exists
+        if "selected_query_index" not in st.session_state:
+            st.session_state.selected_query_index = 0
+        
+        # Find current index based on selected query
+        current_index = 0
+        if st.session_state.selected_query:
+            try:
+                query_index = st.session_state.available_sql_queries.index(st.session_state.selected_query)
+                current_index = query_index + 1  # +1 because of "Select a query..." option
+            except ValueError:
+                current_index = 0
+        
 
         selected_index = st.selectbox(
             "Available SQL queries",
             options=range(len(query_options)),
             format_func=lambda i: query_options[i],
-            index=0, 
+            index=current_index, 
             key="sql_query_selector"
         )
-        if selected_index == 0:
-            st.session_state.selected_query = ""
-        elif selected_index < len(st.session_state.available_sql_queries) + 1:
-            st.session_state.selected_query = st.session_state.available_sql_queries[selected_index - 1]
         
-        if selected_index > 0: 
-            st.session_state.selected_query = st.session_state.available_sql_queries[selected_index - 1]
-        else:
-            st.session_state.selected_query = ""
+        # Handle query selection and reset query panel when changed
+        if selected_index != st.session_state.selected_query_index:
+            # Query selection changed - reset the query panel
+            st.session_state.selected_query_index = selected_index
+            
+            if selected_index == 0:
+                st.session_state.selected_query = ""
+                # Reset query execution results
+                st.session_state.sql_result_df = None
+            else:
+                st.session_state.selected_query = st.session_state.available_sql_queries[selected_index - 1]
+                # Reset query execution results when query changes
+                st.session_state.sql_result_df = None
+            
+            # Force rerun to update the UI
+            st.rerun()
+        
     else:
         st.info("Ask Cortex Analyst a data question to see SQL queries here!")
+        # Reset when no queries available
+        if "selected_query_index" in st.session_state:
+            st.session_state.selected_query_index = 0
+        st.session_state.selected_query = ""
 
 def sql_execution_panel():
     if st.session_state.selected_query:        
         st.code(st.session_state.selected_query, language="sql")
         
-        if st.button("Execute Query", type="primary"):
+        if st.button("Execute Query", type="primary", key="execute_btn"):
             with st.spinner("Executing SQL query..."):
                 result_df = sql_operator_module(st.session_state.selected_query)
                 st.session_state.sql_result_df = result_df
@@ -401,6 +435,8 @@ def sql_execution_panel():
                     st.success(f"Query executed successfully! Retrieved {len(result_df)} rows.")
                 else:
                     st.error("Query execution failed")
+    else:
+        st.info("Please select a query from the dropdown above to execute.")
 
 def main():
     initialize_session_state()
