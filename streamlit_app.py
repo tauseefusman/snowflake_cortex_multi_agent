@@ -7,9 +7,11 @@ import json
 import os
 from dotenv import load_dotenv
 
+import snowflake.connector
 # Import our custom modules
 from multi_agent_workflow import run_workflow
 from chatsnowflakecortex_wrapper import ChatSnowflakeCortex
+
 
 load_dotenv()
 
@@ -34,22 +36,6 @@ DEFAULT_SEMANTIC_MODEL = os.getenv(
     "@SALES_INTELLIGENCE.DATA.MODELS/sales_metrics_model.yaml"
 )
 
-DATABASE_CONFIG = {
-    "database": os.getenv("SNOWFLAKE_DATABASE", "SALES_INTELLIGENCE"),
-    "schema": os.getenv("SNOWFLAKE_SCHEMA", "DATA"),
-    "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
-    "role": os.getenv("SNOWFLAKE_ROLE", "ACCOUNTADMIN")
-}
-
-# Agent Configuration
-AGENT_CONFIG = {
-    "default_model": os.getenv("DEFAULT_MODEL", "llama3.1-70b"),
-    "agent_model": os.getenv("AGENT_MODEL", "claude-3-5-sonnet"),
-    "temperature": 0.1,
-    "max_tokens": 1000,
-    "timeout": int(os.getenv("API_TIMEOUT", "50000"))
-}
-
 # UI Configuration
 UI_CONFIG = {
     "chat_max_height": "80vh",
@@ -59,24 +45,34 @@ UI_CONFIG = {
     "max_query_display_length": 50,
     "max_chart_rows": 20
 }
+# Initialize Snowflake connection if not already done
+if "CONN" not in st.session_state or st.session_state.CONN is None:
+    # For troubleshooting your snowflake connection see https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect
+    try: 
+        st.session_state.CONN = snowflake.connector.connect(
+            user=os.getenv("SNOWFLAKE_USER"),
+            password=os.getenv("SNOWFLAKE_PASSWORD"),
+            account=os.getenv("SNOWFLAKE_ACCOUNT"),
+            role=os.getenv("SNOWFLAKE_ROLE"),
+            warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+            database=os.getenv("SNOWFLAKE_DATABASE"),
+            schema=os.getenv("SNOWFLAKE_SCHEMA")
+        )
+
+        st.success("Connected to Snowflake successfully!")
+    except Exception as e:
+        st.error(f"Failed to connect to Snowflake: {str(e)}")
+        st.info("Please check your credentials and network connection.")
+        st.info("Make sure the .streamlit/secrets.toml file is properly configured.")
+        st.stop()
 
 def get_semantic_models() -> Dict[str, Dict]:
-    """Get available semantic models"""
     return SEMANTIC_MODELS
 
 def get_semantic_model_paths() -> List[str]:
     return [model["path"] for model in SEMANTIC_MODELS.values()]
 
-def get_database_config() -> Dict[str, str]:
-    """Get database connection configuration"""
-    return DATABASE_CONFIG
-
-def get_agent_config() -> Dict:
-    """Get agent configuration"""
-    return AGENT_CONFIG
-
 def get_ui_config() -> Dict:
-    """Get UI configuration"""
     return UI_CONFIG
 
 # Configure Streamlit page with responsive settings
@@ -88,10 +84,6 @@ st.set_page_config(
 )
 
 def extract_sql_queries(text: str) -> List[str]:
-    """
-    Extract SQL queries from analyst agent response.
-    Simply extracts all SQL code blocks and SQL-like statements.
-    """
     sql_queries = []
     code_block_pattern = r'```(?:sql)?\s*(.*?)```'
     code_blocks = re.findall(code_block_pattern, text, re.DOTALL | re.IGNORECASE)
@@ -131,8 +123,6 @@ def initialize_session_state():
         st.session_state.awaiting_response = False
 
 def semantic_model_header():
-    """Semantic model selector at the top of the page"""
-    st.header("DM Assistant - Data Insights & SQL Operations")
     
     semantic_models = get_semantic_models()
     model_names = list(semantic_models.keys())
@@ -150,7 +140,6 @@ def semantic_model_header():
     selected_model_path = model_paths[selected_model_index]
     st.session_state.selected_semantic_model = selected_model_path
     
-    st.markdown("---")
     return selected_model_path
 
 def sidebar_module():
@@ -159,9 +148,7 @@ def sidebar_module():
     return st.session_state.selected_query
 
 def chat_module():
-    # Create a responsive scrollable container for messages
-    # Use a reasonable pixel height that works well across devices
-    chat_container = st.container(height=500)
+    chat_container = st.container(height=600)
     
     with chat_container:
         if st.session_state.messages:
@@ -209,7 +196,6 @@ def chat_module():
                             break
                     
                     if last_user_message:
-                        agent_config = get_agent_config()
                         result = run_workflow(last_user_message, st.session_state.thread_id)
                         
                         if result:
@@ -227,14 +213,8 @@ def chat_module():
                                 "content": response_content
                             })
                             
-                            # if result.get("sql_queries"):
-                            #     st.session_state.available_sql_queries = result["sql_queries"]
-                                
-        
-        # Clear the awaiting response flag
         st.session_state.awaiting_response = False
         
-        # Rerun to show the agent response
         st.rerun()
 
 def cortex_analyst_module(selected_model: str) -> Dict[str, Any]:
@@ -246,38 +226,30 @@ def cortex_analyst_module(selected_model: str) -> Dict[str, Any]:
         "formatted_response": ""
     }
 
+
 def sql_operator_module(selected_query: str) -> Optional[pd.DataFrame]:
-    """Executes selected query and returns result"""
     if not selected_query or not selected_query.strip():
         return None
     
     try:
-        agent_config = get_agent_config()
-        llm = ChatSnowflakeCortex(
-            model=agent_config["default_model"],
-            temperature=agent_config["temperature"],
-            max_tokens=agent_config["max_tokens"],
-        )
-        
-        if llm.session:
-            cursor = llm.session.cursor()
+        with st.spinner("Executing SQL query..."):
+            conn = st.session_state.CONN
+            cursor = conn.cursor()
             cursor.execute(selected_query)
-            
+
             results = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description]
-            
+
             df = pd.DataFrame(results, columns=columns)
             cursor.close()
+            st.session_state.sql_result_df = df
             
+            if df.empty:
+                st.warning("No results found.")
             return df
-        else:
-            st.error("Snowflake connection not available")
-            return None
-            
     except Exception as e:
-        st.error(f"Error executing query: {str(e)}")
+        st.error(f"Error executing SQL query: {str(e)}")
         return None
-
 def visualization_module(sql_result_df: pd.DataFrame):
     if sql_result_df is None or sql_result_df.empty:
         st.info("No data to visualize")
@@ -305,7 +277,6 @@ def visualization_module(sql_result_df: pd.DataFrame):
     
     with line_tab:
         if len(sql_result_df.columns) >= 2:
-            # Auto-detect columns for line chart
             numeric_cols = sql_result_df.select_dtypes(include=['number']).columns.tolist()
             
             if len(numeric_cols) >= 1:
@@ -382,7 +353,6 @@ def visualization_module(sql_result_df: pd.DataFrame):
             st.info("Need at least 2 columns for bar chart")
 
 def sql_queries_panel():
-    st.subheader("Reports / SQL Queries")
     
     if st.session_state.available_sql_queries:
         ui_config = get_ui_config()
@@ -392,14 +362,25 @@ def sql_queries_panel():
             f"{i+1}: {query[:max_length]}..." if len(query) > max_length else f"{i+1}: {query}"
             for i, query in enumerate(st.session_state.available_sql_queries)
         ]
-        
+        # select box must always check from session state
+        if "selected_query" not in st.session_state:
+            st.session_state.selected_query = ""
+        # Select box to choose SQL query
+        st.subheader("Reports / SQL Queries")
+
+
         selected_index = st.selectbox(
-            "Available SQL queries from Cortex Analyst:",
+            "Available SQL queries",
             options=range(len(query_options)),
             format_func=lambda i: query_options[i],
             index=0, 
             key="sql_query_selector"
         )
+        # Update selected query in session state
+        if selected_index == 0:
+            st.session_state.selected_query = ""
+        elif selected_index < len(st.session_state.available_sql_queries) + 1:
+            st.session_state.selected_query = st.session_state.available_sql_queries[selected_index - 1]
         
         if selected_index > 0: 
             st.session_state.selected_query = st.session_state.available_sql_queries[selected_index - 1]
@@ -423,37 +404,26 @@ def sql_execution_panel():
                     st.error("Query execution failed")
 
 def main():
-    """Main app layout and coordination"""
     initialize_session_state()
     
-    # Semantic model selector at the top
-    selected_model = semantic_model_header()
+    st.header("DM Assistant - Data Insights & SQL Operations")
+    sidebar_module()
+    selected_query = st.session_state.selected_query
+    col1, col2 = st.columns([2, 3])  
     
-    # Sidebar module for additional configuration
-    selected_query = sidebar_module()
-    
-    if st.session_state.get('mobile_view', False):
+    with col1:
+        selected_model = semantic_model_header()
+
         chat_module()
-        st.markdown("---")
+    
+    with col2:
         sql_queries_panel()
+        
         if selected_query:
             sql_execution_panel()
+            
             if st.session_state.sql_result_df is not None:
                 visualization_module(st.session_state.sql_result_df)
-    else:
-        col1, col2 = st.columns([3, 2])  
-        
-        with col1:
-            chat_module()
-        
-        with col2:
-            sql_queries_panel()
-            
-            if selected_query:
-                sql_execution_panel()
-                
-                if st.session_state.sql_result_df is not None:
-                    visualization_module(st.session_state.sql_result_df)
 
 if __name__ == "__main__":
     main()

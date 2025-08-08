@@ -20,7 +20,6 @@ SQLOPERATOR_AGENT = "sqloperator"
 GENERAL_AGENT = "general"
 
 class WorkflowState(MessagesState):
-    """State schema for the multi-agent workflow"""
     user_input: str
     general_response: str
     final_response: str
@@ -35,10 +34,6 @@ llm = ChatSnowflakeCortex(
 )
 
 def extract_sql_queries(text: str) -> List[str]:
-    """
-    Extract SQL queries from analyst agent response.
-    Simply extracts all SQL code blocks and SQL-like statements.
-    """
     sql_queries = []
     
     # Pattern to match SQL code blocks (```sql...``` or ```...```)
@@ -421,19 +416,7 @@ def run_workflow(user_input: str, thread_id: str = "default"):
         print(f"Error running workflow: {e}")
         return None
 
-def interactive_demo():
-    """Interactive demo to test the workflow"""
-    print("🤖 Multi-Agent Workflow Demo")
-    print("=" * 50)
-    print("This workflow includes:")
-    print("- Router Agent: Classifies your request")
-    print("- Analyst Agent: Handles data analysis requests")
-    print("- SQLOperator Agent: Creates tables and inserts data")
-    print("- General Agent: Handles other requests")
-    print("=" * 50)
-    print("Type 'quit' to exit")
-    print()
-    
+def interactive_demo():    
     thread_id = "demo_session"
     
     while True:
