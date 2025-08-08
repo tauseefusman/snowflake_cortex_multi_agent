@@ -376,7 +376,6 @@ def sql_queries_panel():
             index=0, 
             key="sql_query_selector"
         )
-        # Update selected query in session state
         if selected_index == 0:
             st.session_state.selected_query = ""
         elif selected_index < len(st.session_state.available_sql_queries) + 1:
