@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 
 # Import our custom modules
-from multi_agent_workflow import run_workflow, extract_sql_queries
+from multi_agent_workflow import run_workflow
 from chatsnowflakecortex_wrapper import ChatSnowflakeCortex
 
 load_dotenv()
@@ -87,6 +87,23 @@ st.set_page_config(
     initial_sidebar_state=APP_CONFIG["sidebar_state"]
 )
 
+def extract_sql_queries(text: str) -> List[str]:
+    """
+    Extract SQL queries from analyst agent response.
+    Simply extracts all SQL code blocks and SQL-like statements.
+    """
+    sql_queries = []
+    code_block_pattern = r'```(?:sql)?\s*(.*?)```'
+    code_blocks = re.findall(code_block_pattern, text, re.DOTALL | re.IGNORECASE)
+    
+    for block in code_blocks:
+        block = block.strip()
+        if block:
+            sql_queries.append(block)
+            
+    
+    return sql_queries
+
 # Initialize session state
 def initialize_session_state():
     """Initialize all session state variables"""
@@ -137,8 +154,7 @@ def semantic_model_header():
     return selected_model_path
 
 def sidebar_module():
-    """Handles additional configuration options"""
-    st.sidebar.title("🔧 Configuration")
+    st.sidebar.title("Configuration")
     
     return st.session_state.selected_query
 
@@ -153,7 +169,6 @@ def chat_module():
                 role = message["role"]
                 content = message["content"]
                 
-                # Map agent names to display names
                 display_role = role
                 if role == "analyst":
                     display_role = "🔍 Cortex Analyst"
@@ -200,14 +215,20 @@ def chat_module():
                         if result:
                             agent_role = result.get("agent_type", "general")
                             response_content = result.get("final_response", "No response available")
+                            print(f"Agent Role: {agent_role}, Response: {response_content}")
                             
+                            # Extract SQL queries from response
+                            sql_queries = extract_sql_queries(response_content)
+                            st.session_state.available_sql_queries.extend(sql_queries)
+                            
+                            # Append the agent response to the chat
                             st.session_state.messages.append({
                                 "role": agent_role, 
                                 "content": response_content
                             })
                             
-                            if result.get("sql_queries"):
-                                st.session_state.available_sql_queries = result["sql_queries"]
+                            # if result.get("sql_queries"):
+                            #     st.session_state.available_sql_queries = result["sql_queries"]
                                 
         
         # Clear the awaiting response flag
@@ -217,7 +238,7 @@ def chat_module():
         st.rerun()
 
 def cortex_analyst_module(selected_model: str) -> Dict[str, Any]:
-    """Cortex Analyst logic to return SQL + responses"""
+    
     return {
         "text": "",
         "sql": "",
@@ -250,16 +271,16 @@ def sql_operator_module(selected_query: str) -> Optional[pd.DataFrame]:
             
             return df
         else:
-            st.error("❌ Snowflake connection not available")
+            st.error("Snowflake connection not available")
             return None
             
     except Exception as e:
-        st.error(f"❌ Error executing query: {str(e)}")
+        st.error(f"Error executing query: {str(e)}")
         return None
 
 def visualization_module(sql_result_df: pd.DataFrame):
     if sql_result_df is None or sql_result_df.empty:
-        st.info("📊 No data to visualize")
+        st.info("No data to visualize")
         return
     
     ui_config = get_ui_config()
@@ -388,7 +409,6 @@ def sql_queries_panel():
         st.info("Ask Cortex Analyst a data question to see SQL queries here!")
 
 def sql_execution_panel():
-    """SQL Operator Execution Panel"""
     if st.session_state.selected_query:        
         st.code(st.session_state.selected_query, language="sql")
         
@@ -398,9 +418,9 @@ def sql_execution_panel():
                 st.session_state.sql_result_df = result_df
                 
                 if result_df is not None:
-                    st.success(f"✅ Query executed successfully! Retrieved {len(result_df)} rows.")
+                    st.success(f"Query executed successfully! Retrieved {len(result_df)} rows.")
                 else:
-                    st.error("❌ Query execution failed")
+                    st.error("Query execution failed")
 
 def main():
     """Main app layout and coordination"""
