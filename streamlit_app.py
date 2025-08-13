@@ -424,7 +424,7 @@ def sql_queries_panel():
 
 def sql_execution_panel():
     if st.session_state.selected_query:        
-        st.code(st.session_state.selected_query, language="sql")
+        st.code(st.session_state.selected_query, language="sql", wrap_lines=True, line_numbers=True, height="content", width="stretch")
         
         if st.button("Execute Query", type="primary", key="execute_btn"):
             with st.spinner("Executing SQL query..."):
