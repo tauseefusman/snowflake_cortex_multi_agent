@@ -45,9 +45,8 @@ UI_CONFIG = {
     "max_query_display_length": 50,
     "max_chart_rows": 20
 }
-# Initialize Snowflake connection if not already done
+
 if "CONN" not in st.session_state or st.session_state.CONN is None:
-    # For troubleshooting your snowflake connection see https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect
     try: 
         st.session_state.CONN = snowflake.connector.connect(
             user=os.getenv("SNOWFLAKE_USER"),
@@ -195,7 +194,11 @@ def chat_module():
                     last_user_message = None
                     for msg in reversed(st.session_state.messages):
                         if msg["role"] == "user":
-                            last_user_message = msg["content"]
+                            # append selected querty to the last user message
+                            if st.session_state.selected_query:
+                                last_user_message = f"{msg['content']} [SQL Query: {st.session_state.selected_query}]"
+                            else:
+                                last_user_message = msg["content"]
                             break
                     
                     if last_user_message:
